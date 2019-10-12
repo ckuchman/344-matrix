@@ -1,0 +1,392 @@
+#!/bin/bash
+
+
+rowFunc()
+{
+ #This function returns the number of 
+ #rows in the passed in file
+
+ #Global return variable
+ _RET=0
+
+ #Increment through the columns and count the number
+ while read line
+ do
+  _RET=$(expr $_RET + 1)
+ done < $1
+}
+
+
+colFunc()
+{
+ #This function returns the number of
+ #rows in the passed in file
+
+ #Global return variable
+ _RET=0
+
+ #Read in the first row and count the columns
+ read firstLine < "$1"
+
+ for i in $firstLine
+ do
+  _RET=$(expr $_RET + 1)
+ done
+}
+
+
+dimsFunc()
+{
+ #This function returns the rows and columns (sent as "row col")
+ #of the filename variable in main. This assumes that the list is tab-delimited and
+ #is rectanglar
+
+ #Gets row value
+ rowFunc $fileName
+ row=$_RET
+
+ #Gets column value
+ colFunc $fileName
+ col=$_RET
+
+ echo "$row $col"
+}
+
+
+transposeFunc()
+{
+ #This function returns the NxM matrix of the filename variable file in main (which is a MxN matrix)
+
+ #Gets row value
+ rowFunc $fileName
+ row=$_RET
+
+ #Gets column value
+ colFunc $fileName
+ col=$_RET
+
+ #Creates a temp file to store copies of columns
+ transFile="tempTransFile$$"
+ touch $transFile
+
+ #Increments through the columns of the matrix, cutting off each column and 
+ #outputing it as a tab delimited row.
+ colItr=0 
+ while [ "$colItr" -ne "$col" ]
+ do
+  #Store the column of the original matrix in a temp file
+  cat $fileName | cut -f $(expr $colItr + 1) >$transFile
+
+  #Increment over the column and print as a row
+  rowItr=0
+  while read line
+  do
+   #prints line, ignores any "commands" like negatives
+   printf "%d" $line
+
+   rowItr=$(expr $rowItr + 1)
+
+   #Only include a tab if not the last of the row
+   if [  "$rowItr" -ne "$row" ]
+   then
+    printf "\t"
+   fi
+  done < $transFile
+
+  #Go to the next row
+  printf "\n"
+
+  colItr=$(expr $colItr + 1) 
+ done
+
+ #Delete temp file
+ rm $transFile
+}
+
+
+meanFunc()
+{
+ #This function takes the filename variable from main to find a file and returns a the mean
+ #value of each column of the matrix 
+
+ #Gets column value
+ colFunc $fileName
+ col=$_RET 
+
+ #Gets row value
+ rowFunc $fileName
+ row=$_RET 
+
+ #Creates a temp file to store copies of columns
+ meanFile="tempMeanFile$$"
+ touch $meanFile
+
+ #Increments through the columns of the matrix, cutting off each column and 
+ #outputing it as a tab delimited row.
+ colItr=0 
+ while [ "$colItr" -ne "$col" ]
+ do
+  #Store the column of the original matrix in a temp file
+  cat $fileName | cut -f $(expr $colItr + 1) >$meanFile	  
+  
+  #Increments over the column summing the numbers present
+  sum=0  
+  while read line
+  do
+   sum=$(expr $sum + $line)
+  done < $meanFile
+
+  #Gets the rounded mean value of the row and prints it to the screen
+  mean=$(((sum+(row/2)*((sum>0)*2-1))/row))
+ 
+  #prints mean, ignores any "commands" like negatives 
+  printf "%d" $mean
+
+  colItr=$(expr $colItr + 1) 
+ 
+  #If not the end of the row add a tab 
+  if [ "$colItr" -ne "$col" ]
+  then
+   printf "\t"
+  fi
+ done
+
+ printf "\n"
+
+ #Delete temp file
+ rm $meanFile
+}
+
+
+addFunc()
+{
+ #This function takes two matrix (through global variables fileName and fileName2)
+ #and adds their values together and prints the result to the stdout. If the different size matrix
+ #are provided a error message is returned.
+
+ #Check if the two matrix match in size
+ #Gets column value
+ colFunc $fileName
+ col=$_RET
+
+ #Gets second file column value
+ colFunc $fileName2
+ col2=$_RET
+
+ #Gets row value
+ rowFunc $fileName
+ row=$_RET
+
+ #Gets second file row value
+ rowFunc $fileName2
+ row2=$_RET
+
+ #checks if the matricies match in size
+ if [ "$col" -ne "$col2" ] || [ "$row" -ne "$row2" ]
+ then
+  echo "The matrices provided do not match" >&2
+  exit 1
+ fi
+ 
+ #Double read code found in:  https://unix.stackexchange.com/questions/82541/loop-through-the-lines-of-two-files-in-parallel 
+ #Reads in from both files provided, incrementing them together so that they can have like matrix positions added.
+ while read file1 <&2 && read file2 <&3
+ do	  
+
+  #Incremetns through the columns of the matrices
+  colItr=0 
+  while [ "$colItr" -ne "$col" ]
+  do
+   #Pulls in the value at the appropriate column for each matrix
+   Num1Val=$(echo "$file1" | cut -f $(expr $colItr + 1))
+   Num2Val=$(echo "$file2" | cut -f $(expr $colItr + 1))
+
+   #Adds result to result matrix
+   printf "%d" $(expr $Num1Val + $Num2Val)
+   
+   #Increments column
+   colItr=$(expr $colItr + 1)
+
+   #If not the end of the row add a tab
+   if [ "$colItr" -ne "$col" ]
+   then
+    printf "\t"
+   fi
+  done
+  
+  #Add new line to result
+  printf "\n"
+  
+ done 2<$fileName 3<$fileName2
+}
+
+
+multFunc()
+{
+ #This function takes two matrix (through global variables fileName and fileName2)
+ #and multiplies the matrices together and prints the result to the stdout.
+
+ #Check if the two matrices can be multipled (M by N only works with N by R)
+ #Gets col value of first matrix
+ colFunc $fileName
+ file1Col=$_RET
+
+ #Gets row value of second matrix
+ rowFunc $fileName2
+ file2Row=$_RET 
+
+ #Gets column value of second matrix
+ colFunc $fileName2
+ file2Col=$_RET 
+
+ #checks if the matricies match in size
+ if [ "$file1Col" -ne "$file2Row" ]
+ then
+  echo "The matrices cannot be multiplied" >&2
+  exit 1
+ fi
+ 
+ #Increments through the rows of the first matrix 
+ while read line
+ do	  
+
+  #While not at past the last column of the second matrix continue (to increment through second matrix)
+  colItr=0   
+  while [ "$colItr" -ne "$file2Col" ]
+  do
+
+   #Gets the column of the second matrix
+   colVals=$(cut -f $(expr $colItr + 1) $fileName2)
+
+   #Increments through the columns in the first matrix row
+   valSum=0
+   file2RowItr=0   
+   for val1 in $line
+   do
+    
+    #Pulls in the row value of the first matrix column
+    #val2=$(printf "$colVals" | head -n $(expr $file2RowItr + 1)| tail -n 1)   
+    val2=$(echo "$colVals" | head -n $(expr $file2RowItr + 1)| tail -n 1)   
+
+    #Increment the row to pull from for the frist matrix
+    file2RowItr=$(expr $file2RowItr + 1)
+    
+    #Multiples the two values together and adds it to the current sum
+    valSum=$(expr $valSum + $(expr $val1 '*' $val2))
+   done
+
+   #Prints to the stout the sum value
+   printf "%d" $valSum
+
+   #Increments the column value for the second matrix
+   colItr=$(expr $colItr + 1)
+
+   #If not the end of the result row then add a tab
+   if [ "$colItr" -ne "$file2Col" ]
+   then
+    printf "\t"
+   fi 
+  done
+
+  #add new line to stdout
+  printf "\n"
+
+ done <$fileName
+}
+
+
+inputNeeded=0
+if [ $1 = "dims" ] || [ $1 = "transpose" ] || [ $1 = "mean" ]
+then
+ inputNeeded=1
+
+ #Return error if too many arguments passed
+ if (( $# > 2 ))
+ then
+  echo "Too many arguments passed" >&2
+  exit 1
+ fi
+elif [ $1 = "add" ] || [ $1 = "multiply" ]
+then
+ inputNeeded=2
+
+ #Return error if too few arguments passed
+ if (( $# == 1 ))
+ then
+  echo "Too few arguments passed" >&2
+  exit 1
+ fi
+else
+ echo "no option selected" >&2
+ exit 1
+fi
+
+fileName="fileName$$"
+fileName2="fileName2$$"
+
+delFile1=0
+if [ "$#" = "1" ]
+then
+ cat > "$fileName"
+ delFile1=1
+elif [ "$#" = "2" ] || [ "$#" = "3" ]
+then
+ fileName=$2
+fi
+
+delFile2=0
+if [ "$inputNeeded" = "2" ]
+then
+ if [ "$#" = "2" ]
+ then
+  cat > "$fileName2"
+  delFile2=1
+ elif [ "$#" = "3" ]
+ then
+  fileName2=$3
+ fi
+fi
+
+#Check to see if the files exist
+if ! [[ -r "$fileName" ]]
+then
+ echo "cannot read file 1" >&2
+ exit 1
+fi
+
+if [ "$inputNeeded" = "2" ] && ! [[ -r "$fileName2" ]]
+then
+ echo "cannot read file 2" >&2
+ exit 1
+fi
+
+if [ $1 = "dims" ]
+then
+ dimsFunc
+elif [ $1 = "transpose" ]
+then
+ transposeFunc
+elif [ $1 = "mean" ]
+then
+ meanFunc
+elif [ $1 = "add" ]
+then
+ addFunc
+elif [ $1 = "multiply" ]
+then
+ multFunc
+else
+ echo "no option selected" >$2
+ exit 1
+fi
+
+if [ "$delFile1" = "1" ]
+then
+ rm $fileName
+fi
+
+if [ "$delFile2" = "1" ]
+then
+ rm $fileName2
+fi
+
